@@ -68,10 +68,12 @@ static const char ixgbe_driver_string[] =
 
 #define BYPASS_TAG
 
+#ifndef RELEASE_TAG
 #define RELEASE_TAG
+#endif
 
 #define DRV_VERSION	__stringify(3.22.3)"ms3" DRIVERIOV DRV_HW_PERF FPGA \
-			VMDQ_TAG BYPASS_TAG RELEASE_TAG
+			VMDQ_TAG BYPASS_TAG __stringify(RELEASE_TAG)
 const char ixgbe_driver_version[] = DRV_VERSION;
 static const char ixgbe_copyright[] =
 				"Copyright (c) 1999-2014 Intel Corporation.";

@@ -1,6 +1,6 @@
 # Redborder Makefile's wrapper
 
-CFLAGS_EXTRA+=-DIXGBE_NO_LRO -DIXGBE_NO_HW_RSC -DIXGBE_DISABLE_8021P_SUPPORT
+CFLAGS_EXTRA+=-DIXGBE_NO_LRO -DIXGBE_NO_HW_RSC -DIXGBE_DISABLE_8021P_SUPPORT -DRELEASE_TAG=\" (rev $(shell git describe --abbrev=6  --always --dirty))\"
 
 INSTALL_MOD_PATH ?= /opt/rb
 
