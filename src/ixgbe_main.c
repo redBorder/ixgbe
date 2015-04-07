@@ -70,7 +70,7 @@ static const char ixgbe_driver_string[] =
 
 #define RELEASE_TAG
 
-#define DRV_VERSION	__stringify(3.22.3) DRIVERIOV DRV_HW_PERF FPGA \
+#define DRV_VERSION	__stringify(3.22.3)"ms3" DRIVERIOV DRV_HW_PERF FPGA \
 			VMDQ_TAG BYPASS_TAG RELEASE_TAG
 const char ixgbe_driver_version[] = DRV_VERSION;
 static const char ixgbe_copyright[] =
@@ -2929,7 +2929,10 @@ static void ixgbe_check_sfp_event(struct ixgbe_adapter *adapter, u32 eicr)
 		/* Clear the interrupt */
 		IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr_mask);
 		if (!test_bit(__IXGBE_DOWN, &adapter->state)) {
-			adapter->flags2 |= IXGBE_FLAG2_SFP_NEEDS_RESET;
+			if (!(((hw->subsystem_vendor_id==0x1374)||
+			   (hw->subsystem_vendor_id==0x1304))&&
+			   (SIL2BP9_IF_SERIES(hw->subsystem_device_id))))
+				adapter->flags2 |= IXGBE_FLAG2_SFP_NEEDS_RESET;
 			ixgbe_service_event_schedule(adapter);
 		}
 	}
@@ -5512,8 +5515,10 @@ static void ixgbe_sfp_link_config(struct ixgbe_adapter *adapter)
 	 */
 	if (adapter->hw.mac.type == ixgbe_mac_82598EB)
 		adapter->flags2 |= IXGBE_FLAG2_SEARCH_FOR_SFP;
-
-	adapter->flags2 |= IXGBE_FLAG2_SFP_NEEDS_RESET;
+	if (!(((adapter->hw.subsystem_vendor_id==0x1374)||
+	    (adapter->hw.subsystem_vendor_id==0x1304))&&
+	    (SIL2BP9_IF_SERIES(adapter->hw.subsystem_device_id))))
+		adapter->flags2 |= IXGBE_FLAG2_SFP_NEEDS_RESET; 
 }
 
 /**
@@ -5764,6 +5769,7 @@ void ixgbe_reset(struct ixgbe_adapter *adapter)
 
 	if (IXGBE_REMOVED(hw->hw_addr))
 		return;
+
 	/* lock SFP init bit to prevent race conditions with the watchdog */
 	while (test_and_set_bit(__IXGBE_IN_SFP_INIT, &adapter->state))
 		usleep_range(1000, 2000);
@@ -7510,7 +7516,6 @@ static void ixgbe_sfp_detection_subtask(struct ixgbe_adapter *adapter)
 	/* someone else is in init, wait until next service event */
 	if (test_and_set_bit(__IXGBE_IN_SFP_INIT, &adapter->state))
 		return;
-
 	err = hw->phy.ops.identify_sfp(hw);
 	if (err == IXGBE_ERR_SFP_NOT_SUPPORTED)
 		goto sfp_out;
@@ -7518,7 +7523,10 @@ static void ixgbe_sfp_detection_subtask(struct ixgbe_adapter *adapter)
 	if (err == IXGBE_ERR_SFP_NOT_PRESENT) {
 		/* If no cable is present, then we need to reset
 		 * the next time we find a good cable. */
-		adapter->flags2 |= IXGBE_FLAG2_SFP_NEEDS_RESET;
+		if (!(((hw->subsystem_vendor_id==0x1374)||
+		    (hw->subsystem_vendor_id==0x1304))&&
+		    (SIL2BP9_IF_SERIES(hw->subsystem_device_id))))
+			adapter->flags2 |= IXGBE_FLAG2_SFP_NEEDS_RESET;
 	}
 
 	/* exit on error */
@@ -7589,7 +7597,6 @@ static void ixgbe_sfp_link_config_subtask(struct ixgbe_adapter *adapter)
 				speed = IXGBE_LINK_SPEED_10GB_FULL;
 		}
 	}
-
 	if (hw->mac.ops.setup_link)
 		hw->mac.ops.setup_link(hw, speed, true);
 

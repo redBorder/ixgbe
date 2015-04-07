@@ -2880,11 +2880,11 @@ static int ixgbe_update_ethtool_fdir_entry(struct ixgbe_adapter *adapter,
 	INIT_HLIST_NODE(&input->fdir_node);
 
 	/* add filter to the list */
-	if (parent)
+	/*if (parent)
 		hlist_add_after(parent, &input->fdir_node);
 	else
 		hlist_add_head(&input->fdir_node,
-			       &adapter->fdir_filter_list);
+			       &adapter->fdir_filter_list);*/
 
 	/* update counts */
 	adapter->fdir_filter_count++;
