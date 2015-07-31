@@ -25,5 +25,8 @@
 
 *******************************************************************************/
 
-#include "ixgbe.h"
+#ifndef _IXGBE_FCOE_H
+#define _IXGBE_FCOE_H
 
+
+#endif /* _IXGBE_FCOE_H */
