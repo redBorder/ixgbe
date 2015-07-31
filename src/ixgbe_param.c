@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel 10 Gigabit PCI Express Linux driver
-  Copyright(c) 1999 - 2007 Intel Corporation.
+  Copyright(c) 1999 - 2008 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -20,7 +20,6 @@
   the file called "COPYING".
 
   Contact Information:
-  Linux NICS <linux.nics@intel.com>
   e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
   Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 
@@ -79,7 +78,7 @@
  *
  * Default Value: 2
  */
-IXGBE_PARAM(InterruptType, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X)");
+IXGBE_PARAM(InterruptType, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), default 2");
 #define IXGBE_INT_LEGACY		      0
 #define IXGBE_INT_MSI			      1
 #define IXGBE_INT_MSIX			      2
@@ -94,7 +93,7 @@ IXGBE_PARAM(InterruptType, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X)");
  * Default Value: 1
  */
 
-IXGBE_PARAM(MQ, "Disable or enable Multiple Queues (MQ)");
+IXGBE_PARAM(MQ, "Disable or enable Multiple Queues, default 1");
 
 #ifdef IXGBE_DCA
 /* DCA - Direct Cache Access (DCA) Enable/Disable
@@ -106,7 +105,7 @@ IXGBE_PARAM(MQ, "Disable or enable Multiple Queues (MQ)");
  * Default Value: 1
  */
 
-IXGBE_PARAM(DCA, "Disable or enable Direct Cache Access (DCA)");
+IXGBE_PARAM(DCA, "Disable or enable Direct Cache Access, default 1");
 
 #endif
 /* RSS - Receive-Side Scaling (RSS) Descriptor Queues
@@ -119,8 +118,18 @@ IXGBE_PARAM(DCA, "Disable or enable Direct Cache Access (DCA)");
  * Default Value: 1
  */
 
-IXGBE_PARAM(RSS, "Number of Receive-Side Scaling (RSS) Descriptor Queues");
+IXGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, default 1=number of cpus");
 
+/* VMDQ - Virtual Machine Device Queues (VMDQ)
+ *
+ * Valid Range: 1-16
+ *  - 1 Disables VMDQ by allocating only a single queue.
+ *  - 2-16 - enables VMDQ and sets the Desc. Q's to the specified value.
+ *
+ * Default Value: 1
+ */
+
+IXGBE_PARAM(VMDQ, "Number of Virtual Machine Device Queues: 0/1 = disable (default), 2-16 enable");
 
 /* Interrupt Throttle Rate (interrupts/sec)
  *
@@ -128,7 +137,7 @@ IXGBE_PARAM(RSS, "Number of Receive-Side Scaling (RSS) Descriptor Queues");
  *
  * Default Value: 8000
  */
-IXGBE_PARAM(InterruptThrottleRate, "Maximum interrupts per second, per vector");
+IXGBE_PARAM(InterruptThrottleRate, "Maximum interrupts per second, per vector, (100-500000), default 8000");
 #define DEFAULT_ITR                 8000
 #define MAX_ITR                   500000
 #define MIN_ITR                      100
@@ -140,7 +149,7 @@ IXGBE_PARAM(InterruptThrottleRate, "Maximum interrupts per second, per vector");
  *
  * Default Value: 0 (disabled)
  */
-IXGBE_PARAM(LLIPort, "Low Latency Interrupt TCP Port");
+IXGBE_PARAM(LLIPort, "Low Latency Interrupt TCP Port (0-65535)");
 
 #define DEFAULT_LLIPORT                0
 #define MAX_LLIPORT               0xFFFF
@@ -152,7 +161,7 @@ IXGBE_PARAM(LLIPort, "Low Latency Interrupt TCP Port");
  *
  * Default Value: 0 (disabled)
  */
-IXGBE_PARAM(LLIPush, "Low Latency Interrupt on TCP Push flag");
+IXGBE_PARAM(LLIPush, "Low Latency Interrupt on TCP Push flag (0,1)");
 
 #define DEFAULT_LLIPUSH                0
 #define MAX_LLIPUSH                    1
@@ -164,20 +173,36 @@ IXGBE_PARAM(LLIPush, "Low Latency Interrupt on TCP Push flag");
  *
  * Default Value: 0 (disabled)
  */
-IXGBE_PARAM(LLISize, "Low Latency Interrupt on Packet Size");
+IXGBE_PARAM(LLISize, "Low Latency Interrupt on Packet Size (0-1500)");
 
 #define DEFAULT_LLISIZE                0
 #define MAX_LLISIZE                 1500
 #define MIN_LLISIZE                    0
 #endif /* IXGBE_NO_LLI */
 
+#ifndef IXGBE_NO_INET_LRO
+/* LROAggr (Large Receive Offload)
+ *
+ * Valid Range: 2 - 44
+ *
+ * Default Value:  32
+ */
+IXGBE_PARAM(LROAggr, "LRO - Maximum packets to aggregate");
+
+#define DEFAULT_LRO_AGGR              32
+#define MAX_LRO_AGGR                  44
+#define MIN_LRO_AGGR                   2
+
+#endif
 /* Rx buffer mode
  *
  * Valid Range: 0-2 0 = 1buf_mode_always, 1 = ps_mode_always and 2 = optimal
  *
  * Default Value: 2
  */
-IXGBE_PARAM(RxBufferMode, "Rx Buffer Mode - Packet split or one buffer in rx");
+IXGBE_PARAM(RxBufferMode, "0=1 descriptor per packet,\n"
+                          "\t\t\t1=use packet split, multiple descriptors per jumbo frame\n"
+                          "\t\t\t2 (default)=use 1buf mode for 1500 mtu, packet split for jumbo");
 
 #define IXGBE_RXBUFMODE_1BUF_ALWAYS			0
 #define IXGBE_RXBUFMODE_PS_ALWAYS			1
@@ -281,7 +306,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 
 	{ /* Interrupt Type */
 		unsigned int i_type;
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = range_option,
 			.name = "Interrupt Type",
 			.err =
@@ -304,17 +329,20 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 					       "support unavailable.\n");
 				break;
 			case IXGBE_INT_MSI:
-				if (!adapter->flags & IXGBE_FLAG_MSI_CAPABLE)
+				if (!adapter->flags & IXGBE_FLAG_MSI_CAPABLE) {
 					printk(KERN_INFO
 					       "Ignoring MSI setting; "
 					       "support unavailable.\n");
-				else
+				} else {
 					adapter->flags &= ~IXGBE_FLAG_MSIX_CAPABLE;
+					adapter->flags &= ~IXGBE_FLAG_DCB_CAPABLE;
+				}
 				break;
 			case IXGBE_INT_LEGACY:
 			default:
 				adapter->flags &= ~IXGBE_FLAG_MSIX_CAPABLE;
 				adapter->flags &= ~IXGBE_FLAG_MSI_CAPABLE;
+				adapter->flags &= ~IXGBE_FLAG_DCB_CAPABLE;
 				break;
 			}
 #ifdef module_param_array
@@ -325,7 +353,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 #endif
 	}
 	{ /* Multiple Queue Support */
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = enable_option,
 			.name = "Multiple Queue Support",
 			.err  = "defaulting to Enabled",
@@ -349,19 +377,6 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				adapter->flags &= ~IXGBE_FLAG_MQ_CAPABLE;
 		}
 #endif
-#ifdef CONFIG_IXGBE_NAPI
-#if ( LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24) )
-		/* Must disable multiqueue for NAPI operation on
-		 * kernels that don't have multiqueue NAPI support
-		 */
-		if (adapter->flags & IXGBE_FLAG_MQ_CAPABLE) {
-			DPRINTK(PROBE, INFO,
-			        "Multiple queues are not supported while NAPI "
-			        "is enabled.  Disabling Multiple Queues.\n");
-			adapter->flags &= ~IXGBE_FLAG_MQ_CAPABLE;
-		}
-#endif
-#endif
 		/* Check Interoperability */
 		if ((adapter->flags & IXGBE_FLAG_MQ_CAPABLE) &&
 		    !(adapter->flags & IXGBE_FLAG_MSIX_CAPABLE)) {
@@ -373,42 +388,39 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 	}
 #ifdef IXGBE_DCA
 	{ /* Direct Cache Access (DCA) */
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = enable_option,
 			.name = "Direct Cache Access (DCA)",
-			.err  = "defaulting to Disabled",
+			.err  = "defaulting to Enabled",
 			.def  = OPTION_ENABLED
 		};
+		unsigned int dca = opt.def;
 
 #ifdef module_param_array
 		if (num_DCA > bd) {
 #endif
-			unsigned int dca = DCA[bd];
+			dca = DCA[bd];
 			ixgbe_validate_option(&dca, &opt);
-			if (dca)
-				adapter->flags |= IXGBE_FLAG_DCA_ENABLED;
-			else
+			if (!dca)
+				adapter->flags &= ~IXGBE_FLAG_DCA_CAPABLE;
+
+			/* Check Interoperability */
+			if (!(adapter->flags & IXGBE_FLAG_DCA_CAPABLE)) {
+				DPRINTK(PROBE, INFO, "DCA is disabled\n");
 				adapter->flags &= ~IXGBE_FLAG_DCA_ENABLED;
+			}
 #ifdef module_param_array
 		} else {
-			if (opt.def == OPTION_ENABLED)
-				adapter->flags |= IXGBE_FLAG_DCA_ENABLED;
-			else
-				adapter->flags &= ~IXGBE_FLAG_DCA_ENABLED;
+			/* make sure to clear the capability flag if the
+			 * option is disabled by default above */
+			if (opt.def == OPTION_DISABLED)
+				adapter->flags &= ~IXGBE_FLAG_DCA_CAPABLE;
 		}
 #endif
-		/* Check Interoperability */
-		if ((adapter->flags & IXGBE_FLAG_DCA_ENABLED) &&
-		    !(adapter->flags & IXGBE_FLAG_DCA_CAPABLE)) {
-			DPRINTK(PROBE, INFO,
-			        "DCA is not supported on this hardware.  "
-			        "Disabling DCA.\n");
-			adapter->flags &= ~IXGBE_FLAG_DCA_ENABLED;
-		}
 	}
 #endif /* IXGBE_DCA */
 	{ /* Receive-Side Scaling (RSS) */
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = range_option,
 			.name = "Receive-Side Scaling (RSS)",
 			.err  = "using default.",
@@ -431,21 +443,6 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				          (int)num_online_cpus());
 				break;
 			default:
-				/* limit the value to no more than the number
-				 * of CPUs */
-				if (rss > num_online_cpus()) {
-					opt.arg.r.max = num_online_cpus();
-					/* print the message */
-					ixgbe_validate_option(&rss, &opt);
-					DPRINTK(PROBE, INFO,
-					"RSS should be no more than the number "
-					"of online CPUs\n");
-					/* use the default setting */
-					rss = min(IXGBE_MAX_RSS_INDICES,
-					          (int)num_online_cpus());
-					break;
-				}
-
 				ixgbe_validate_option(&rss, &opt);
 				break;
 			}
@@ -480,12 +477,66 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				        "queues are disabled.  "
 				        "Disabling RSS.\n");
 				adapter->flags &= ~IXGBE_FLAG_RSS_ENABLED;
+				adapter->flags &= ~IXGBE_FLAG_DCB_CAPABLE;
 				adapter->ring_feature[RING_F_RSS].indices = 0;
 			}
 		}
 	}
+	{ /* Virtual Machine Device Queues (VMDQ) */
+		static struct ixgbe_option opt = {
+			.type = range_option,
+			.name = "Virtual Machine Device Queues (VMDQ)",
+			.err  = "defaulting to Disabled",
+			.def  = OPTION_DISABLED,
+			.arg  = { .r = { .min = OPTION_DISABLED,
+					 .max = IXGBE_MAX_VMDQ_INDICES}}
+		};
+
+#ifdef module_param_array
+		if (num_VMDQ > bd) {
+#endif
+			unsigned int vmdq = VMDQ[bd];
+			ixgbe_validate_option(&vmdq, &opt);
+			adapter->ring_feature[RING_F_VMDQ].indices = vmdq;
+			/* zero or one both mean disabled from our driver's
+			 * perspective */
+			if (vmdq > 1)
+				adapter->flags |= IXGBE_FLAG_VMDQ_ENABLED;
+			else
+				adapter->flags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+#ifdef module_param_array
+		} else {
+			if (opt.def == OPTION_DISABLED) {
+				adapter->flags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+			} else {
+				adapter->ring_feature[RING_F_VMDQ].indices = 8;
+				adapter->flags |= IXGBE_FLAG_VMDQ_ENABLED;
+			}
+		}
+#endif
+		/* Check Interoperability */
+		if (adapter->flags & IXGBE_FLAG_VMDQ_ENABLED) {
+			if (!(adapter->flags & IXGBE_FLAG_VMDQ_CAPABLE)) {
+				DPRINTK(PROBE, INFO,
+				        "VMDQ is not supported on this "
+				        "hardware.  Disabling VMDQ.\n");
+				adapter->flags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+				adapter->ring_feature[RING_F_VMDQ].indices = 0;
+			} else if (!(adapter->flags & IXGBE_FLAG_MQ_CAPABLE)) {
+				DPRINTK(PROBE, INFO,
+				        "VMDQ is not supported while multiple "
+				        "queues are disabled.  "
+				        "Disabling VMDQ.\n");
+				adapter->flags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+				adapter->ring_feature[RING_F_VMDQ].indices = 0;
+			}
+			/* for now, disable RSS when using VMDQ mode */
+			adapter->flags &= ~IXGBE_FLAG_RSS_CAPABLE;
+			adapter->flags &= ~IXGBE_FLAG_RSS_ENABLED;
+		}
+	}
 	{ /* Interrupt Throttling Rate */
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = range_option,
 			.name = "Interrupt Throttling Rate (ints/sec)",
 			.err  = "using default of "__MODULE_STRING(DEFAULT_ITR),
@@ -528,7 +579,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 	}
 #ifndef IXGBE_NO_LLI
 	{ /* Low Latency Interrupt TCP Port*/
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = range_option,
 			.name = "Low Latency Interrupt TCP Port",
 			.err  = "using default of "
@@ -555,7 +606,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 #endif
 	}
 	{ /* Low Latency Interrupt on Packet Size */
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = range_option,
 			.name = "Low Latency Interrupt on Packet Size",
 			.err  = "using default of "
@@ -582,7 +633,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 #endif
 	}
 	{ /*Low Latency Interrupt on TCP Push flag*/
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = enable_option,
 			.name = "Low Latency Interrupt on TCP Push flag",
 			.err  = "defaulting to Disabled",
@@ -608,9 +659,37 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 #endif
 	}
 #endif /* IXGBE_NO_LLI */
+#ifndef IXGBE_NO_INET_LRO
+	{ /* Large Receive Offload - Maximum packets to aggregate */
+		static struct ixgbe_option opt = {
+			.type = range_option,
+			.name = "LRO - Maximum packets to aggregate",
+			.err  = "using default of " __MODULE_STRING(DEFAULT_LRO_AGGR),
+			.def  = DEFAULT_LRO_AGGR,
+			.arg  = { .r = { .min = MIN_LRO_AGGR,
+					 .max = MAX_LRO_AGGR }}
+		};
+
+#ifdef module_param_array
+		if (num_LROAggr > bd) {
+#endif
+			adapter->lro_max_aggr = LROAggr[bd];
+			if (adapter->lro_max_aggr) {
+				ixgbe_validate_option(&adapter->lro_max_aggr, &opt);
+			} else {
+				DPRINTK(PROBE, INFO, "%s turned off\n",
+					opt.name);
+			}
+#ifdef module_param_array
+		} else {
+			adapter->lro_max_aggr = opt.def;
+		}
+#endif
+	}
+#endif /* IXGBE_NO_INET_LRO */
 	{ /* Rx buffer mode */
 		unsigned int rx_buf_mode;
-		struct ixgbe_option opt = {
+		static struct ixgbe_option opt = {
 			.type = range_option,
 			.name = "Rx buffer mode",
 			.err = "using default of "

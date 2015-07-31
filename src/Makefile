@@ -1,7 +1,7 @@
 ################################################################################
 #
 # Intel 10 Gigabit PCI Express Linux driver
-# Copyright(c) 1999 - 2007 Intel Corporation.
+# Copyright(c) 1999 - 2008 Intel Corporation.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms and conditions of the GNU General Public License,
@@ -20,7 +20,6 @@
 # the file called "COPYING".
 #
 # Contact Information:
-# Linux NICS <linux.nics@intel.com>
 # e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
 # Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 #
@@ -32,8 +31,10 @@
 # core driver files
 CFILES = ixgbe_main.c ixgbe_common.c ixgbe_api.c ixgbe_param.c \
          ixgbe_ethtool.c kcompat.c ixgbe_82598.c \
+         ixgbe_dcb.c ixgbe_dcb_82598.c \
          ixgbe_phy.c
 HFILES = ixgbe.h ixgbe_common.h ixgbe_api.h ixgbe_osdep.h kcompat.h \
+         ixgbe_dcb.h \
          ixgbe_phy.h
 ifeq (,$(BUILD_KERNEL))
 BUILD_KERNEL=$(shell uname -r)
@@ -71,8 +72,8 @@ ifeq (,$(KSRC))
   $(warning *** Install the appropriate kernel development package, e.g.)
   $(error kernel-devel, for building kernel modules and try again)
 else
-ifeq (/lib/modules/$(shell uname -r)/source, $(KSRC))
-  KOBJ :=  /lib/modules/$(shell uname -r)/build
+ifeq (/lib/modules/$(BUILD_KERNEL)/source, $(KSRC))
+  KOBJ :=  /lib/modules/$(BUILD_KERNEL)/build
 else
   KOBJ :=  $(KSRC)
 endif
@@ -82,9 +83,9 @@ endif
 ifneq (,$(wildcard /boot/vmlinuz.version.h))
   VERSION_FILE := /boot/vmlinuz.version.h
   CONFIG_FILE  := /boot/vmlinuz.autoconf.h
-  KVER := $(shell $(CC) $(CFLAGS) -E -dM $(VERSION_FILE) | \
+  KVER := $(shell $(CC) $(EXTRA_CFLAGS) -E -dM $(VERSION_FILE) | \
           grep UTS_RELEASE | awk '{ print $$3 }' | sed 's/\"//g')
-  ifeq ($(KVER),$(shell uname -r))
+  ifeq ($(KVER),$(BUILD_KERNEL))
     # set up include path to override headers from kernel source
     x:=$(shell rm -rf include)
     x:=$(shell mkdir -p include/linux)
@@ -158,8 +159,8 @@ EXTRA_CFLAGS += $(shell [ -f $(KSRC)/include/linux/modversions.h ] && \
                   -include $(KSRC)/include/linux/modversions.h")
 
 EXTRA_CFLAGS += $(CFLAGS_EXTRA)
-# enable RSS by default
 EXTRA_CFLAGS += -DCONFIG_IXGBE_RSS
+# do nothing here, so it's stripped properly
 
 RHC := $(KSRC)/include/linux/rhconfig.h
 ifneq (,$(wildcard $(RHC)))
@@ -170,12 +171,12 @@ ifneq (,$(wildcard $(RHC)))
 endif
 
 # get the kernel version - we use this to find the correct install path
-KVER := $(shell $(CC) $(CFLAGS) -E -dM $(VERSION_FILE) | grep UTS_RELEASE | \
+KVER := $(shell $(CC) $(EXTRA_CFLAGS) -E -dM $(VERSION_FILE) | grep UTS_RELEASE | \
         awk '{ print $$3 }' | sed 's/\"//g')
 
 # assume source symlink is the same as build, otherwise adjust KOBJ
 ifneq (,$(wildcard /lib/modules/$(KVER)/build))
-ifneq ($(KSRC),$(shell cd /lib/modules/$(KVER)/build ; pwd -P))
+ifneq ($(KSRC),$(shell readlink /lib/modules/$(KVER)/build))
   KOBJ=/lib/modules/$(KVER)/build
 endif
 endif
@@ -187,11 +188,19 @@ ifeq ($(KKVER), 0)
           *** This driver is not supported on kernel versions older than 2.4.0)
 endif
 
+# Add DCB netlink source and FCoE sysfs source if our kernel is 2.6.23 or newer
+KKVER := $(shell echo $(KVER) | \
+         awk '{ if ($$0 ~ /2\.[6-9]\.(2[3-9]|[3-9][0-9])/) print "1"; else print "0"}')
+ifeq ($(KKVER), 1)
+  CFILES += ixgbe_dcb_nl.c
+  CFILES += ixgbe_sysfs.c
+endif
+
 # set the install path
 INSTDIR := /lib/modules/$(KVER)/kernel/drivers/net/$(DRIVER_NAME)
 
 # look for SMP in config.h
-SMP := $(shell $(CC) $(CFLAGS) -E -dM $(CONFIG_FILE) | \
+SMP := $(shell $(CC) $(EXTRA_CFLAGS) -E -dM $(CONFIG_FILE) | \
          grep -w CONFIG_SMP | awk '{ print $$3 }')
 ifneq ($(SMP),1)
   SMP := 0
@@ -218,7 +227,7 @@ endif
 ###########################################################################
 # 2.4.x & 2.6.x Specific rules
 
-K_VERSION:=$(shell uname -r | cut -c1-3 | sed 's/2\.[56]/2\.6/')
+K_VERSION:=$(shell echo $(BUILD_KERNEL) | cut -c1-3 | sed 's/2\.[56]/2\.6/')
 
 ifeq ($(K_VERSION), 2.6)
 
@@ -230,7 +239,7 @@ MANSECTION = 7
 MANFILE = $(TARGET:.ko=.$(MANSECTION))
 
 ifneq ($(PATCHLEVEL),)
-# EXTRA_CFLAGS += $(CFLAGS_EXTRA)
+EXTRA_CFLAGS += $(CFLAGS_EXTRA)
 obj-m += $(DRIVER_NAME).o
 $(DRIVER_NAME)-objs := $(CFILES:.c=.o)
 else
@@ -251,18 +260,17 @@ TARGET = $(DRIVER_NAME).o
 MANSECTION = 7
 MANFILE = $(TARGET:.o=.$(MANSECTION))
 
-# include the flags we set up above
-CFLAGS += $(EXTRA_CFLAGS)
-
 # Get rid of compile warnings in kernel header files from SuSE
 ifneq (,$(wildcard /etc/SuSE-release))
-  CFLAGS += -Wno-sign-compare -fno-strict-aliasing
+  EXTRA_CFLAGS += -Wno-sign-compare -fno-strict-aliasing
 endif
 
 # Get rid of compile warnings in kernel header files from fedora
 ifneq (,$(wildcard /etc/fedora-release))
-  CFLAGS += -fno-strict-aliasing
+  EXTRA_CFLAGS += -fno-strict-aliasing
 endif
+
+CFLAGS += $(EXTRA_CFLAGS)
 
 .SILENT: $(TARGET)
 $(TARGET): $(filter-out $(TARGET), $(CFILES:.c=.o))
