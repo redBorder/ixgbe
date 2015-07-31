@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel 10 Gigabit PCI Express Linux driver
-  Copyright(c) 1999 - 2007 Intel Corporation.
+  Copyright(c) 1999 - 2008 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -20,7 +20,6 @@
   the file called "COPYING".
 
   Contact Information:
-  Linux NICS <linux.nics@intel.com>
   e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
   Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 
@@ -75,14 +74,17 @@ s32 ixgbe_set_mac_type(struct ixgbe_hw *hw)
 {
 	s32 ret_val = IXGBE_SUCCESS;
 
-	DEBUGFUNC("ixgbe_set_mac_type");
+	DEBUGFUNC("ixgbe_set_mac_type\n");
 
 	if (hw->vendor_id == IXGBE_INTEL_VENDOR_ID) {
 		switch (hw->device_id) {
 		case IXGBE_DEV_ID_82598AF_SINGLE_PORT:
 		case IXGBE_DEV_ID_82598AF_DUAL_PORT:
+		case IXGBE_DEV_ID_82598AT:
 		case IXGBE_DEV_ID_82598EB_CX4:
 		case IXGBE_DEV_ID_82598_CX4_DUAL_PORT:
+		case IXGBE_DEV_ID_82598_DA_DUAL_PORT:
+		case IXGBE_DEV_ID_82598_SR_DUAL_PORT_EM:
 		case IXGBE_DEV_ID_82598EB_XF_LR:
 			hw->mac.type = ixgbe_mac_82598EB;
 			break;
@@ -94,6 +96,8 @@ s32 ixgbe_set_mac_type(struct ixgbe_hw *hw)
 		ret_val = IXGBE_ERR_DEVICE_NOT_SUPPORTED;
 	}
 
+	DEBUGOUT2("ixgbe_set_mac_type found mac: %d, returns: %d\n",
+	          hw->mac.type, ret_val);
 	return ret_val;
 }
 
@@ -356,7 +360,7 @@ s32 ixgbe_check_phy_link(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
  *  ixgbe_setup_phy_link_speed - Set auto advertise
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
- *  @autoneg: TRUE if autonegotiation enabled
+ *  @autoneg: true if autonegotiation enabled
  *
  *  Sets the auto advertised capabilities
  **/
@@ -389,17 +393,18 @@ s32 ixgbe_setup_link(struct ixgbe_hw *hw)
  *  Reads the links register to determine if link is up and the current speed
  **/
 s32 ixgbe_check_link(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
-                     bool *link_up)
+                     bool *link_up, bool link_up_wait_to_complete)
 {
 	return ixgbe_call_func(hw, hw->mac.ops.check_link, (hw, speed,
-	                       link_up), IXGBE_NOT_IMPLEMENTED);
+	                       link_up, link_up_wait_to_complete),
+	                       IXGBE_NOT_IMPLEMENTED);
 }
 
 /**
  *  ixgbe_setup_link_speed - Set link speed
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
- *  @autoneg: TRUE if autonegotiation enabled
+ *  @autoneg: true if autonegotiation enabled
  *
  *  Set the link speed and restarts the link.
  **/

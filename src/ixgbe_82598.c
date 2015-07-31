@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel 10 Gigabit PCI Express Linux driver
-  Copyright(c) 1999 - 2007 Intel Corporation.
+  Copyright(c) 1999 - 2008 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -20,7 +20,6 @@
   the file called "COPYING".
 
   Contact Information:
-  Linux NICS <linux.nics@intel.com>
   e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
   Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 
@@ -30,7 +29,6 @@
 #include "ixgbe_api.h"
 #include "ixgbe_common.h"
 #include "ixgbe_phy.h"
-
 
 s32 ixgbe_init_ops_82598(struct ixgbe_hw *hw);
 s32 ixgbe_get_link_capabilities_82598(struct ixgbe_hw *hw,
@@ -44,7 +42,7 @@ s32 ixgbe_setup_fc_82598(struct ixgbe_hw *hw, s32 packetbuf_num);
 s32 ixgbe_setup_mac_link_82598(struct ixgbe_hw *hw);
 s32 ixgbe_check_mac_link_82598(struct ixgbe_hw *hw,
                                ixgbe_link_speed *speed,
-                               bool *link_up);
+                               bool *link_up, bool link_up_wait_to_complete);
 s32 ixgbe_setup_mac_link_speed_82598(struct ixgbe_hw *hw,
                                      ixgbe_link_speed speed,
                                      bool autoneg,
@@ -68,57 +66,43 @@ s32 ixgbe_blink_led_start_82598(struct ixgbe_hw *hw, u32 index);
  **/
 s32 ixgbe_init_ops_82598(struct ixgbe_hw *hw)
 {
-	struct ixgbe_eeprom_info *eeprom = &hw->eeprom;
 	struct ixgbe_mac_info *mac = &hw->mac;
 	struct ixgbe_phy_info *phy = &hw->phy;
+	s32 ret_val;
 
-	/* EEPROM */
-	eeprom->ops.init_params = &ixgbe_init_eeprom_params_generic;
-	eeprom->ops.read = &ixgbe_read_eeprom_bit_bang_generic;
-	eeprom->ops.write = &ixgbe_write_eeprom_generic;
-	eeprom->ops.validate_checksum =
-	                              &ixgbe_validate_eeprom_checksum_generic;
-	eeprom->ops.update_checksum = &ixgbe_update_eeprom_checksum_generic;
+	ret_val = ixgbe_init_phy_ops_generic(hw);
+	ret_val = ixgbe_init_ops_generic(hw);
 
 	/* MAC */
-	mac->ops.init_hw = &ixgbe_init_hw_generic;
 	mac->ops.reset_hw = &ixgbe_reset_hw_82598;
-	mac->ops.start_hw = &ixgbe_start_hw_generic;
-	mac->ops.clear_hw_cntrs = &ixgbe_clear_hw_cntrs_generic;
 	mac->ops.get_media_type = &ixgbe_get_media_type_82598;
-	mac->ops.get_mac_addr = &ixgbe_get_mac_addr_generic;
-	mac->ops.stop_adapter = &ixgbe_stop_adapter_generic;
-	mac->ops.get_bus_info = &ixgbe_get_bus_info_generic;
-	mac->ops.read_analog_reg8 = &ixgbe_read_analog_reg8_generic;
-	mac->ops.write_analog_reg8 = &ixgbe_write_analog_reg8_generic;
 
 	/* LEDs */
-	mac->ops.led_on = &ixgbe_led_on_generic;
-	mac->ops.led_off = &ixgbe_led_off_generic;
 	mac->ops.blink_led_start = &ixgbe_blink_led_start_82598;
 	mac->ops.blink_led_stop = &ixgbe_blink_led_stop_82598;
 
 	/* RAR, Multicast, VLAN */
-	mac->ops.set_rar = &ixgbe_set_rar_generic;
 	mac->ops.set_vmdq = &ixgbe_set_vmdq_82598;
-	mac->ops.init_rx_addrs = &ixgbe_init_rx_addrs_generic;
-	mac->ops.update_uc_addr_list = &ixgbe_update_uc_addr_list_generic;
-	mac->ops.update_mc_addr_list = &ixgbe_update_mc_addr_list_generic;
-	mac->ops.enable_mc = &ixgbe_enable_mc_generic;
-	mac->ops.disable_mc = &ixgbe_disable_mc_generic;
-	mac->ops.clear_vfta = &ixgbe_clear_vfta_generic;
-	mac->ops.set_vfta = &ixgbe_set_vfta_generic;
 
 	/* Flow Control */
 	mac->ops.setup_fc = &ixgbe_setup_fc_82598;
 
-	/* PHY */
-	phy->ops.identify = &ixgbe_identify_phy_generic;
-	phy->ops.reset = &ixgbe_reset_phy_generic;
-	phy->ops.read_reg = &ixgbe_read_phy_reg_generic;
-	phy->ops.write_reg = &ixgbe_write_phy_reg_generic;
-	phy->ops.setup_link = &ixgbe_setup_phy_link_generic;
-	phy->ops.setup_link_speed = &ixgbe_setup_phy_link_speed_generic;
+	/* Call PHY identify routine to get the phy type */
+	phy->ops.identify(hw);
+
+	/* PHY Init */
+	switch (hw->phy.type) {
+	case ixgbe_phy_tn:
+		phy->ops.check_link = &ixgbe_check_phy_link_tnx;
+		phy->ops.get_firmware_version =
+		             &ixgbe_get_phy_firmware_version_tnx;
+		break;
+	case ixgbe_phy_nl:
+		phy->ops.reset = &ixgbe_reset_phy_nl;
+		break;
+	default:
+		break;
+	}
 
 	/* Link */
 	mac->ops.check_link = &ixgbe_check_mac_link_82598;
@@ -171,17 +155,17 @@ s32 ixgbe_get_link_capabilities_82598(struct ixgbe_hw *hw,
 	switch (autoc_reg & IXGBE_AUTOC_LMS_MASK) {
 	case IXGBE_AUTOC_LMS_1G_LINK_NO_AN:
 		*speed = IXGBE_LINK_SPEED_1GB_FULL;
-		*autoneg = FALSE;
+		*autoneg = false;
 		break;
 
 	case IXGBE_AUTOC_LMS_10G_LINK_NO_AN:
 		*speed = IXGBE_LINK_SPEED_10GB_FULL;
-		*autoneg = FALSE;
+		*autoneg = false;
 		break;
 
 	case IXGBE_AUTOC_LMS_1G_AN:
 		*speed = IXGBE_LINK_SPEED_1GB_FULL;
-		*autoneg = TRUE;
+		*autoneg = true;
 		break;
 
 	case IXGBE_AUTOC_LMS_KX4_AN:
@@ -191,7 +175,7 @@ s32 ixgbe_get_link_capabilities_82598(struct ixgbe_hw *hw,
 			*speed |= IXGBE_LINK_SPEED_10GB_FULL;
 		if (autoc_reg & IXGBE_AUTOC_KX_SUPP)
 			*speed |= IXGBE_LINK_SPEED_1GB_FULL;
-		*autoneg = TRUE;
+		*autoneg = true;
 		break;
 
 	default:
@@ -218,7 +202,7 @@ s32 ixgbe_get_copper_link_capabilities_82598(struct ixgbe_hw *hw,
 	u16 speed_ability;
 
 	*speed = 0;
-	*autoneg = TRUE;
+	*autoneg = true;
 
 	status = hw->phy.ops.read_reg(hw, IXGBE_MDIO_PHY_SPEED_ABILITY,
 	                            IXGBE_MDIO_PMA_PMD_DEV_TYPE,
@@ -250,8 +234,13 @@ enum ixgbe_media_type ixgbe_get_media_type_82598(struct ixgbe_hw *hw)
 	case IXGBE_DEV_ID_82598AF_SINGLE_PORT:
 	case IXGBE_DEV_ID_82598EB_CX4:
 	case IXGBE_DEV_ID_82598_CX4_DUAL_PORT:
+	case IXGBE_DEV_ID_82598_DA_DUAL_PORT:
+	case IXGBE_DEV_ID_82598_SR_DUAL_PORT_EM:
 	case IXGBE_DEV_ID_82598EB_XF_LR:
 		media_type = ixgbe_media_type_fiber;
+		break;
+	case IXGBE_DEV_ID_82598AT:
+		media_type = ixgbe_media_type_copper;
 		break;
 	default:
 		media_type = ixgbe_media_type_unknown;
@@ -446,27 +435,82 @@ s32 ixgbe_setup_mac_link_82598(struct ixgbe_hw *hw)
  *  ixgbe_check_mac_link_82598 - Get link/speed status
  *  @hw: pointer to hardware structure
  *  @speed: pointer to link speed
- *  @link_up: TRUE is link is up, FALSE otherwise
+ *  @link_up: true is link is up, false otherwise
+ *  @link_up_wait_to_complete: bool used to wait for link up or not
  *
  *  Reads the links register to determine if link is up and the current speed
  **/
 s32 ixgbe_check_mac_link_82598(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
-                               bool *link_up)
+                               bool *link_up, bool link_up_wait_to_complete)
 {
 	u32 links_reg;
+	u32 i;
+	u16 link_reg, adapt_comp_reg;
+
+	/*
+	 * SERDES PHY requires us to read link status from undocumented
+	 * register 0xC79F.  Bit 0 set indicates link is up/ready; clear
+	 * indicates link down.  OxC00C is read to check that the XAUI lanes
+	 * are active.  Bit 0 clear indicates active; set indicates inactive.
+	 */
+	if (hw->phy.type == ixgbe_phy_nl) {
+		hw->phy.ops.read_reg(hw, 0xC79F, IXGBE_TWINAX_DEV, &link_reg);
+		hw->phy.ops.read_reg(hw, 0xC79F, IXGBE_TWINAX_DEV, &link_reg);
+		hw->phy.ops.read_reg(hw, 0xC00C, IXGBE_TWINAX_DEV,
+		                     &adapt_comp_reg);
+		if (link_up_wait_to_complete) {
+			for (i = 0; i < IXGBE_LINK_UP_TIME; i++) {
+				if ((link_reg & 1) &&
+				    ((adapt_comp_reg & 1) == 0)) {
+					*link_up = true;
+					break;
+				} else {
+					*link_up = false;
+				}
+				msleep(100);
+				hw->phy.ops.read_reg(hw, 0xC79F, IXGBE_TWINAX_DEV,
+				                     &link_reg);
+				hw->phy.ops.read_reg(hw, 0xC00C,
+				                     IXGBE_TWINAX_DEV,
+				                     &adapt_comp_reg);
+			}
+		} else {
+			if ((link_reg & 1) &&
+			    ((adapt_comp_reg & 1) == 0))
+				*link_up = true;
+			else
+				*link_up = false;
+		}
+
+		if (*link_up == false)
+			goto out;
+	}
 
 	links_reg = IXGBE_READ_REG(hw, IXGBE_LINKS);
-
-	if (links_reg & IXGBE_LINKS_UP)
-		*link_up = TRUE;
-	else
-		*link_up = FALSE;
+	if (link_up_wait_to_complete) {
+		for (i = 0; i < IXGBE_LINK_UP_TIME; i++) {
+			if (links_reg & IXGBE_LINKS_UP) {
+				*link_up = true;
+				break;
+			} else {
+				*link_up = false;
+			}
+			msleep(100);
+			links_reg = IXGBE_READ_REG(hw, IXGBE_LINKS);
+		}
+	} else {
+		if (links_reg & IXGBE_LINKS_UP)
+			*link_up = true;
+		else
+			*link_up = false;
+	}
 
 	if (links_reg & IXGBE_LINKS_SPEED)
 		*speed = IXGBE_LINK_SPEED_10GB_FULL;
 	else
 		*speed = IXGBE_LINK_SPEED_1GB_FULL;
 
+out:
 	return IXGBE_SUCCESS;
 }
 
@@ -475,8 +519,8 @@ s32 ixgbe_check_mac_link_82598(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
  *  ixgbe_setup_mac_link_speed_82598 - Set MAC link speed
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
- *  @autoneg: TRUE if auto-negotiation enabled
- *  @autoneg_wait_to_complete: TRUE if waiting is needed to complete
+ *  @autoneg: true if auto-negotiation enabled
+ *  @autoneg_wait_to_complete: true if waiting is needed to complete
  *
  *  Set the link speed in the AUTOC register and restarts link.
  **/
@@ -505,7 +549,7 @@ s32 ixgbe_setup_mac_link_speed_82598(struct ixgbe_hw *hw,
 	if (status == IXGBE_SUCCESS) {
 		hw->phy.autoneg_wait_to_complete = autoneg_wait_to_complete;
 
-		hw->mac.link_settings_loaded = TRUE;
+		hw->mac.link_settings_loaded = true;
 		/*
 		 * Setup and restart the link based on the new values in
 		 * ixgbe_hw This will write the AUTOC register based on the new
@@ -548,8 +592,8 @@ s32 ixgbe_setup_copper_link_82598(struct ixgbe_hw *hw)
  *  ixgbe_setup_copper_link_speed_82598 - Set the PHY autoneg advertised field
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
- *  @autoneg: TRUE if autonegotiation enabled
- *  @autoneg_wait_to_complete: TRUE if waiting is needed to complete
+ *  @autoneg: true if autonegotiation enabled
+ *  @autoneg_wait_to_complete: true if waiting is needed to complete
  *
  *  Sets the link speed in the AUTOC register in the MAC and restarts link.
  **/
@@ -628,7 +672,8 @@ s32 ixgbe_reset_hw_82598(struct ixgbe_hw *hw)
 	}
 
 	/* Reset PHY */
-	hw->phy.ops.reset(hw);
+	if (hw->phy.reset_disable == false)
+		hw->phy.ops.reset(hw);
 
 	/*
 	 * Prevent the PCI-E bus from from hanging by disabling PCI-E master
@@ -683,7 +728,7 @@ s32 ixgbe_reset_hw_82598(struct ixgbe_hw *hw)
 		hw->mac.link_attach_type =
 		                         (autoc & IXGBE_AUTOC_LMS_ATTACH_TYPE);
 		hw->mac.link_mode_select = (autoc & IXGBE_AUTOC_LMS_MASK);
-		hw->mac.link_settings_loaded = TRUE;
+		hw->mac.link_settings_loaded = true;
 	}
 
 	/* Store the permanent mac address */
@@ -725,7 +770,7 @@ s32 ixgbe_blink_led_start_82598(struct ixgbe_hw *hw, u32 index)
 	 * Link must be up to auto-blink the LEDs on the 82598EB MAC;
 	 * force it if link is down.
 	 */
-	hw->mac.ops.check_link(hw, &speed, &link_up);
+	hw->mac.ops.check_link(hw, &speed, &link_up, false);
 
 	if (!link_up) {
 		autoc_reg |= IXGBE_AUTOC_FLU;

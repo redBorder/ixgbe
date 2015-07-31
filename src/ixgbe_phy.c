@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel 10 Gigabit PCI Express Linux driver
-  Copyright(c) 1999 - 2007 Intel Corporation.
+  Copyright(c) 1999 - 2008 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -20,7 +20,6 @@
   the file called "COPYING".
 
   Contact Information:
-  Linux NICS <linux.nics@intel.com>
   e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
   Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 
@@ -29,6 +28,29 @@
 #include "ixgbe_api.h"
 #include "ixgbe_common.h"
 #include "ixgbe_phy.h"
+
+/**
+ *  ixgbe_init_phy_ops_generic - Inits PHY function ptrs
+ *  @hw: pointer to the hardware structure
+ *
+ *  Initialize the function pointers.
+ **/
+s32 ixgbe_init_phy_ops_generic(struct ixgbe_hw *hw)
+{
+	struct ixgbe_phy_info *phy = &hw->phy;
+
+	/* PHY */
+	phy->ops.identify = &ixgbe_identify_phy_generic;
+	phy->ops.reset = &ixgbe_reset_phy_generic;
+	phy->ops.read_reg = &ixgbe_read_phy_reg_generic;
+	phy->ops.write_reg = &ixgbe_write_phy_reg_generic;
+	phy->ops.setup_link = &ixgbe_setup_phy_link_generic;
+	phy->ops.setup_link_speed = &ixgbe_setup_phy_link_speed_generic;
+	phy->ops.check_link = NULL;
+	phy->ops.get_firmware_version = NULL;
+
+	return IXGBE_SUCCESS;
+}
 
 /**
  *  ixgbe_identify_phy_generic - Get physical layer module
@@ -67,14 +89,14 @@ s32 ixgbe_identify_phy_generic(struct ixgbe_hw *hw)
 bool ixgbe_validate_phy_addr(struct ixgbe_hw *hw, u32 phy_addr)
 {
 	u16 phy_id = 0;
-	bool valid = FALSE;
+	bool valid = false;
 
 	hw->phy.addr = phy_addr;
 	hw->phy.ops.read_reg(hw, IXGBE_MDIO_PHY_ID_HIGH,
 	                     IXGBE_MDIO_PMA_PMD_DEV_TYPE, &phy_id);
 
 	if (phy_id != 0xFFFF && phy_id != 0x0)
-		valid = TRUE;
+		valid = true;
 
 	return valid;
 }
@@ -116,14 +138,21 @@ enum ixgbe_phy_type ixgbe_get_phy_type_from_id(u32 phy_id)
 	enum ixgbe_phy_type phy_type;
 
 	switch (phy_id) {
+	case TN1010_PHY_ID:
+		phy_type = ixgbe_phy_tn;
+		break;
 	case QT2022_PHY_ID:
 		phy_type = ixgbe_phy_qt;
+		break;
+	case ATH_PHY_ID:
+		phy_type = ixgbe_phy_nl;
 		break;
 	default:
 		phy_type = ixgbe_phy_unknown;
 		break;
 	}
 
+	DEBUGOUT1("phy type found is %d\n", phy_type);
 	return phy_type;
 }
 
@@ -396,7 +425,7 @@ s32 ixgbe_setup_phy_link_generic(struct ixgbe_hw *hw)
  *  ixgbe_setup_phy_link_speed_generic - Sets the auto advertised capabilities
  *  @hw: pointer to hardware structure
  *  @speed: new link speed
- *  @autoneg: TRUE if autonegotiation enabled
+ *  @autoneg: true if autonegotiation enabled
  **/
 s32 ixgbe_setup_phy_link_speed_generic(struct ixgbe_hw *hw,
                                        ixgbe_link_speed speed,
@@ -423,3 +452,211 @@ s32 ixgbe_setup_phy_link_speed_generic(struct ixgbe_hw *hw,
 	return IXGBE_SUCCESS;
 }
 
+/**
+ *  ixgbe_check_phy_link_tnx - Determine link and speed status
+ *  @hw: pointer to hardware structure
+ *
+ *  Reads the VS1 register to determine if link is up and the current speed for
+ *  the PHY.
+ **/
+s32 ixgbe_check_phy_link_tnx(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
+                             bool *link_up)
+{
+	s32 status = IXGBE_SUCCESS;
+	u32 time_out;
+	u32 max_time_out = 10;
+	u16 phy_link = 0;
+	u16 phy_speed = 0;
+	u16 phy_data = 0;
+
+	/* Initialize speed and link to default case */
+	*link_up = false;
+	*speed = IXGBE_LINK_SPEED_10GB_FULL;
+
+	/*
+	 * Check current speed and link status of the PHY register.
+	 * This is a vendor specific register and may have to
+	 * be changed for other copper PHYs.
+	 */
+	for (time_out = 0; time_out < max_time_out; time_out++) {
+		udelay(10);
+		status = hw->phy.ops.read_reg(hw,
+		                        IXGBE_MDIO_VENDOR_SPECIFIC_1_STATUS,
+		                        IXGBE_MDIO_VENDOR_SPECIFIC_1_DEV_TYPE,
+		                        &phy_data);
+		phy_link = phy_data &
+		           IXGBE_MDIO_VENDOR_SPECIFIC_1_LINK_STATUS;
+		phy_speed = phy_data &
+		            IXGBE_MDIO_VENDOR_SPECIFIC_1_SPEED_STATUS;
+		if (phy_link == IXGBE_MDIO_VENDOR_SPECIFIC_1_LINK_STATUS) {
+			*link_up = true;
+			if (phy_speed ==
+			    IXGBE_MDIO_VENDOR_SPECIFIC_1_SPEED_STATUS)
+				*speed = IXGBE_LINK_SPEED_1GB_FULL;
+			break;
+		}
+	}
+
+	return status;
+}
+
+/**
+ *  ixgbe_get_phy_firmware_version_tnx - Gets the PHY Firmware Version
+ *  @hw: pointer to hardware structure
+ *  @firmware_version: pointer to the PHY Firmware Version
+ **/
+s32 ixgbe_get_phy_firmware_version_tnx(struct ixgbe_hw *hw,
+                                       u16 *firmware_version)
+{
+	s32 status = IXGBE_SUCCESS;
+
+	status = hw->phy.ops.read_reg(hw, TNX_FW_REV,
+	                              IXGBE_MDIO_VENDOR_SPECIFIC_1_DEV_TYPE,
+	                              firmware_version);
+
+	return status;
+}
+
+/**
+ *  ixgbe_reset_phy_nl - Performs a PHY reset
+ *  @hw: pointer to hardware structure
+ **/
+s32 ixgbe_reset_phy_nl(struct ixgbe_hw *hw)
+{
+	u16 phy_offset, control, eword, edata, list_crc, block_crc, id, sfp_id;
+	bool end_data = false;
+	u16 list_offset, data_offset;
+	u16 phy_data = 0;
+	s32 ret_val = IXGBE_SUCCESS;
+	u32 i;
+
+	hw->phy.ops.read_reg(hw, IXGBE_MDIO_PHY_XS_CONTROL,
+	                     IXGBE_MDIO_PHY_XS_DEV_TYPE, &phy_data);
+
+	/* reset the PHY and poll for completion */
+	hw->phy.ops.write_reg(hw, IXGBE_MDIO_PHY_XS_CONTROL,
+	                      IXGBE_MDIO_PHY_XS_DEV_TYPE,
+	                      (phy_data | IXGBE_MDIO_PHY_XS_RESET));
+
+	for (i = 0; i < 100; i++) {
+		hw->phy.ops.read_reg(hw, IXGBE_MDIO_PHY_XS_CONTROL,
+		                     IXGBE_MDIO_PHY_XS_DEV_TYPE, &phy_data);
+		if ((phy_data & IXGBE_MDIO_PHY_XS_RESET) == 0 )
+			break;
+		msleep(10);
+	}
+
+	if ((phy_data & IXGBE_MDIO_PHY_XS_RESET) != 0) {
+		DEBUGOUT("PHY reset did not complete.\n");
+		ret_val = IXGBE_ERR_PHY;
+		goto out;
+	}
+
+	/* read offset to PHY init contents */
+	hw->eeprom.ops.read(hw, IXGBE_PHY_INIT_OFFSET_NL, &list_offset);
+
+	if ((!list_offset) || (list_offset == 0xFFFF)) {
+		ret_val = IXGBE_ERR_PHY;
+		goto out;
+	}
+
+	/* Acquire the CRC */
+	hw->eeprom.ops.read(hw, list_offset, &list_crc);
+
+	/* Shift offset to first ID word */
+	list_offset++;
+
+	/* determine the sfp sequence based on device ID */
+	switch (hw->device_id) {
+	case IXGBE_DEV_ID_82598_DA_DUAL_PORT:
+		sfp_id = 0;
+		break;
+	case IXGBE_DEV_ID_82598_SR_DUAL_PORT_EM:
+		sfp_id = 1;
+		break;
+	default:
+		ret_val = IXGBE_ERR_PHY;
+		goto out;
+	}
+
+	/*
+	 * Find the matching sfp ID in the EEPROM
+	 * and program the init sequence
+	 */
+	hw->eeprom.ops.read(hw, list_offset, &id);
+
+	while (!((id == IXGBE_CONTROL_EOL_NL) || (end_data == true))) {
+		if (id == sfp_id) {
+			list_offset++;
+			hw->eeprom.ops.read(hw, list_offset, &data_offset);
+			if ((!data_offset) || (data_offset == 0xFFFF))
+				break;
+			ret_val = hw->eeprom.ops.read(hw, data_offset,
+			                              &block_crc);
+			data_offset++;
+			while (!end_data) {
+				/*
+				 * Read control word from PHY init contents
+				 * offset
+				 */
+				ret_val = hw->eeprom.ops.read(hw, data_offset,
+				                              &eword);
+				control = (eword & IXGBE_CONTROL_MASK_NL) >>
+				          IXGBE_CONTROL_SHIFT_NL;
+				edata = eword & IXGBE_DATA_MASK_NL;
+				switch (control) {
+				case IXGBE_DELAY_NL:
+					data_offset++;
+					DEBUGOUT1("DELAY: %d MS\n", edata);
+					msleep(edata);
+					break;
+				case IXGBE_DATA_NL:
+					DEBUGOUT("DATA:  \n");
+					data_offset++;
+					hw->eeprom.ops.read(hw, data_offset++,
+					                    &phy_offset);
+					for (i = 0; i < edata; i++) {
+						hw->eeprom.ops.read(hw,
+						                   data_offset,
+						                   &eword);
+						hw->phy.ops.write_reg(hw,
+						              phy_offset,
+						              IXGBE_TWINAX_DEV,
+						              eword);
+						DEBUGOUT2("Wrote %4.4x to %4.4x\n",
+						          eword, phy_offset);
+						data_offset++;
+						phy_offset++;
+					}
+					break;
+				case IXGBE_CONTROL_NL:
+					data_offset++;
+					DEBUGOUT("CONTROL: \n");
+					if (edata == IXGBE_CONTROL_EOL_NL) {
+						DEBUGOUT("EOL\n");
+						end_data = true;
+					} else if (edata == IXGBE_CONTROL_SOL_NL) {
+						DEBUGOUT("SOL\n");
+					} else {
+						DEBUGOUT("Bad control value\n");
+						ret_val = IXGBE_ERR_PHY;
+						goto out;
+					}
+					break;
+				default:
+					DEBUGOUT("Bad control type\n");
+					ret_val = IXGBE_ERR_PHY;
+					goto out;
+				}
+			}
+		} else {
+			list_offset += 2;
+			ret_val = hw->eeprom.ops.read(hw, list_offset, &id);
+			if (ret_val)
+				goto out;
+		}
+	}
+
+out:
+	return ret_val;
+}
