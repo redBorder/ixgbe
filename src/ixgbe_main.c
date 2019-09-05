@@ -9095,7 +9095,7 @@ static const struct net_device_ops ixgbe_netdev_ops = {
 	.ndo_poll_controller	= ixgbe_netpoll,
 #endif
 #ifdef CONFIG_NET_RX_BUSY_POLL
-#	.ndo_busy_poll		= ixgbe_busy_poll_recv,
+/* 	.ndo_busy_poll		= ixgbe_busy_poll_recv, */
 #endif /* CONFIG_NET_RX_BUSY_POLL */
 #ifdef IXGBE_FCOE
 	.ndo_fcoe_ddp_setup = ixgbe_fcoe_ddp_get,
